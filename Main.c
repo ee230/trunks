@@ -15,7 +15,6 @@
 #include "HAL.h"                 /* Function for Hardware Abstraction.        */
 #include "Main.h"                /* Main application header.                  */
 #include "EHCILL.h"              /* eHCILL Implementation Header.             */
-#include "Accelerometer.h"       /* Accelerometer Definitions.                */
 #include "HRDWCFG.h"
 
 #define MAX_COMMAND_LENGTH                         (64)  /* Denotes the max   */

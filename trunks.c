@@ -22,9 +22,7 @@
 #include "SS1BTPS.h"             /* Main SS1 BT Stack Header.                 */
 #include "SS1BTGAT.h"            /* Main SS1 GATT Header.                     */
 #include "SS1BTGAP.h"            /* Main SS1 GAP Service Header.              */
-#include "SS1BTACC.h"            /* Main ACC Header.                          */
 #include "BTPSKRNL.h"            /* BTPS Kernel Header.                       */
-#include "Accelerometer.h"       /* Accelerometer Hardware Module Header.     */
 #include "HCITRANS.h"            /* HCI Transport Layer Header.               */
 #include "HRDWCFG.h"             /* Hardware Configuration.                   */
 
@@ -73,8 +71,6 @@
 #define LE_DEMO_DEVICE_NAME                        "Keyfob"
 #define CB_DEMO_DEVICE_NAME                        "Keyfob"
 
-#define ASCII_DATA				  					1
-
 /* The following is used as a printf replacement.                    */
 #define Display(_x)                                do { BTPS_OutputMessage _x; } while(0)
 
@@ -109,7 +105,6 @@ typedef struct _tagApplicationStateInfo_t {
 	Byte_t Flags;
 	Mailbox_t Mailbox;
 	unsigned int GAPSInstanceID;
-	unsigned int ACCInstanceID;
 	unsigned int HCIEventCallbackHandle;
 	ConnectionInfo_t LEConnectionInfo;
 	ConnectionInfo_t CBConnectionInfo;
@@ -118,7 +113,6 @@ typedef struct _tagApplicationStateInfo_t {
 	unsigned int SPPBufferLength;
 	Byte_t SPPBuffer[SPP_BUFFER_SIZE];
 	Byte_t AccelEnableCount;
-	Accelerometer_Data_t CurrentAccelData;
 } ApplicationStateInfo_t;
 
 #define APPLICATION_STATE_INFO_FLAGS_LE_CONNECTED        0x01
@@ -135,16 +129,6 @@ typedef struct _tagApplicationStateInfo_t {
 #define APPLICATION_MAILBOX_MESSAGE_ID_CB_DISCONNECTED   0x03
 #define APPLICATION_MAILBOX_MESSAGE_ID_CB_CONNECTED      0x04
 #define APPLICATION_MAILBOX_MESSAGE_ID_SPP_BUFFER_EMPTY  0x05
-#define APPLICATION_MAILBOX_MESSAGE_ID_KEY_STATE_CHANGE  0x06
-#define APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_ENABLE      0x07
-#define APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_DISABLE     0x08
-#define APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_CHANGE      0x09
-
-#define APPLICATION_MAILBOX_MESSAGE_ID_X_AXIS            0x20
-#define APPLICATION_MAILBOX_MESSAGE_ID_Y_AXIS            0x40
-#define APPLICATION_MAILBOX_MESSAGE_ID_Z_AXIS            0x80
-#define APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_MASK        0xE0
-#define APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_SHIFT       5
 
 /* The following structure for a Master is used to hold a list of    */
 /* information on all paired devices. For slave we will not use this */
@@ -157,7 +141,6 @@ typedef struct _tagDeviceInfo_t {
 	Long_Term_Key_t LTK;
 	Random_Number_t Rand;
 	Word_t EDIV;
-	ACC_Server_Information_t ACCServerInformation;
 	struct _tagDeviceInfoInfo_t *NextDeviceInfoInfoPtr;
 } DeviceInfo_t;
 
@@ -252,7 +235,6 @@ static void DisplayPairingInformation(
 		GAP_LE_Pairing_Capabilities_t Pairing_Capabilities);
 static void DisplayFunctionError(char *Function, int Status);
 static void DisplayFunctionSuccess(char *Function);
-static void DisplayAccelChange(char *Header, Byte_t Mask);
 
 static int SPPOpenServer(unsigned int BluetoothStackID);
 
@@ -281,10 +263,8 @@ static int StartAdvertising(unsigned int BluetoothStackID);
 static void IdleFunction(unsigned int BluetoothStackID);
 
 static unsigned int FormatSPPDataPacket(unsigned int PacketBufferLength,
-		Byte_t *PacketBuffer, Accelerometer_Data_t *AccelerometerData);
+		Byte_t *PacketBuffer);
 static void ProcessSendSPPData(Boolean_t PacketizeCurrentData);
-static void ProcessReadAccelData(void);
-static void ProcessSendLEAccelData(Byte_t AxisChangeMask);
 
 /* BTPS Callback function prototypes.                                */
 static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
@@ -293,8 +273,6 @@ static void BTPSAPI GATT_Connection_Event_Callback(
 		unsigned int BluetoothStackID,
 		GATT_Connection_Event_Data_t *GATT_Connection_Event_Data,
 		unsigned long CallbackParameter);
-static void BTPSAPI ACC_Event_Callback(unsigned int BluetoothStackID,
-		ACC_Event_Data_t *ACC_Event_Data, unsigned long CallbackParameter);
 static void BTPSAPI GAP_Event_Callback(unsigned int BluetoothStackID,
 		GAP_Event_Data_t *GAP_Event_Data, unsigned long CallbackParameter);
 static void BTPSAPI SPP_Event_Callback(unsigned int BluetoothStackID,
@@ -448,14 +426,6 @@ static void DisplayFunctionError(char *Function, int Status) {
 /* Displays a function success message.                              */
 static void DisplayFunctionSuccess(char *Function) {
 	Display(("%s success.\r\n",Function));
-}
-
-/* The following function is a utility function that is used to      */
-/* display an acceleromter change.                                   */
-static void DisplayAccelChange(char *Header, Byte_t Mask) {
-	if (Header)
-		Display(
-				("%s:%s%s%s.\r\n", Header, ((Mask & APPLICATION_MAILBOX_MESSAGE_ID_X_AXIS)?" X":""), ((Mask & APPLICATION_MAILBOX_MESSAGE_ID_Y_AXIS)?" Y":""), ((Mask & APPLICATION_MAILBOX_MESSAGE_ID_Z_AXIS)?" Z":"")));
 }
 
 /* The following function is responsible for opening a Serial Port   */
@@ -671,47 +641,19 @@ static int OpenStack(HCI_DriverInformation_t *HCI_DriverInformation,
 								ApplicationStateInfo.GAPSInstanceID,
 								GAP_DEVICE_APPEARENCE_VALUE_GENERIC_COMPUTER);
 
-						/* Initialize the ACC Service.                     */
-						Result = ACC_Initialize_Service(
-								ApplicationStateInfo.BluetoothStackID,
-								ACC_Event_Callback, 0, &ServiceID);
-						if (Result > 0) {
-							/* Save the Instance ID of the ACC Service.     */
-							ApplicationStateInfo.ACCInstanceID =
-									(unsigned int) Result;
+						/* Save the callback handle.                    */
+						ApplicationStateInfo.HCIEventCallbackHandle =
+								(unsigned int) ret_val;
 
-							/* Set the Range Characteristic of the          */
-							/* Accelerometer Service.                       */
-							ACC_Set_Accelerometer_Range(
-									ApplicationStateInfo.BluetoothStackID,
-									ApplicationStateInfo.ACCInstanceID,
-									TI_ACC_RANGE_2G);
+						/* Format the EIR Data.                         */
+						FormatEIRData(ApplicationStateInfo.BluetoothStackID);
 
-							/* Save the callback handle.                    */
-							ApplicationStateInfo.HCIEventCallbackHandle =
-									(unsigned int) ret_val;
+						/* Format the Advertising Data.                 */
+						FormatAdvertisingData(
+								ApplicationStateInfo.BluetoothStackID, TRUE);
 
-							/* Format the EIR Data.                         */
-							FormatEIRData(
-									ApplicationStateInfo.BluetoothStackID);
-
-							/* Format the Advertising Data.                 */
-							FormatAdvertisingData(
-									ApplicationStateInfo.BluetoothStackID,
-									TRUE);
-
-							/* Return success to the caller.                */
-							ret_val = 0;
-						} else {
-							/* The Stack was NOT initialized successfully,  */
-							/* inform the user and set the return value of  */
-							/* the initialization function to an error.     */
-							DisplayFunctionError("ACC_Initialize_Service",
-									Result);
-
-							ret_val = UNABLE_TO_INITIALIZE_STACK;
-
-						}
+						/* Return success to the caller.                */
+						ret_val = 0;
 					} else {
 						/* The Stack was NOT initialized successfully, inform */
 						/* the user and set the return value of the           */
@@ -778,11 +720,6 @@ static int CloseStack(void) {
 		if (ApplicationStateInfo.GAPSInstanceID)
 			GAPS_Cleanup_Service(ApplicationStateInfo.BluetoothStackID,
 					ApplicationStateInfo.GAPSInstanceID);
-
-		/* Clean up the ACC Service Module.                               */
-		if (ApplicationStateInfo.ACCInstanceID)
-			ACC_Cleanup_Service(ApplicationStateInfo.BluetoothStackID,
-					ApplicationStateInfo.ACCInstanceID);
 
 		if (ApplicationStateInfo.SPPServerPortID) {
 			SPP_Un_Register_SDP_Record( ApplicationStateInfo.BluetoothStackID,
@@ -1156,8 +1093,7 @@ static void FormatEIRData(unsigned int BluetoothStackID) {
 		TempPtr += UUID_16_SIZE;
 
 		/* Assign the Accelerometer UUID.                                 */
-		TI_ACC_ASSIGN_ACC_SERVICE_UUID_16(*((UUID_16_t *)TempPtr));
-
+		//TI_ACC_ASSIGN_ACC_SERVICE_UUID_16(*((UUID_16_t *) TempPtr)); FIXME
 		TempPtr += UUID_16_SIZE;
 
 		Length += 2 + (UUID_16_SIZE<<2);
@@ -1339,10 +1275,10 @@ static void IdleFunction(unsigned int BluetoothStackID) {
 /* format a SPP Data Packet.  This function returns the number of    */
 /* bytes formatted into PacketBuffer.                                */
 static unsigned int FormatSPPDataPacket(unsigned int PacketBufferLength,
-		Byte_t *PacketBuffer, Accelerometer_Data_t *AccelerometerData) {
-	BTPS_SprintF((char *) PacketBuffer, "accX:%02X, accY:%02X, accZ:%02X\n\r",
-			AccelerometerData->X_Axis, AccelerometerData->Y_Axis,
-			AccelerometerData->Z_Axis);
+		Byte_t *PacketBuffer) {
+	static int i = 0;
+
+	BTPS_SprintF((char *) PacketBuffer, "hello #%i\n", i++);
 
 	return BTPS_StringLength((char *) PacketBuffer);
 }
@@ -1367,8 +1303,7 @@ static void ProcessSendSPPData(Boolean_t PacketizeCurrentData) {
 					FormatSPPDataPacket(
 							SPP_BUFFER_SIZE
 									- ApplicationStateInfo.SPPBufferLength,
-							&(ApplicationStateInfo.SPPBuffer[ApplicationStateInfo.SPPBufferLength]),
-							&(ApplicationStateInfo.CurrentAccelData));
+							&(ApplicationStateInfo.SPPBuffer[ApplicationStateInfo.SPPBufferLength]));
 		}
 
 		/* Send the packetized SPP data to the remote device.             */
@@ -1394,120 +1329,6 @@ static void ProcessSendSPPData(Boolean_t PacketizeCurrentData) {
 			ApplicationStateInfo.SPPBufferLength -= (unsigned int) Result;
 		} else
 			Display(("Error - SPP_Data_Write returned %d.\r\n", Result));
-	}
-}
-
-/* The following function is used to process and read accelerometer  */
-/* data from the accelerometer hardware.                             */
-static void ProcessReadAccelData(void) {
-	Byte_t MessageID = APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_CHANGE;
-	Accelerometer_Data_t AccelData;
-
-	/* If the accelerometer is enabled see if there is any data ready,   */
-	if (ApplicationStateInfo.AccelEnableCount) {
-		/* Check to see if any data is ready.                             */
-		if (Accelerometer_Ready()) {
-			/* Data is ready so attempt to read from the accelerometer.    */
-			Accelerometer_Read(&AccelData);
-
-			/* Determine which of the axis has changed since we last read  */
-			/* from the accelerometer.                                     */
-			if ((ApplicationStateInfo.CurrentAccelData.X_Axis
-					< AccelData.X_Axis - 1)
-					|| (ApplicationStateInfo.CurrentAccelData.X_Axis
-							> AccelData.X_Axis + 1)) {
-				ApplicationStateInfo.CurrentAccelData.X_Axis = AccelData.X_Axis;
-
-				MessageID |= APPLICATION_MAILBOX_MESSAGE_ID_X_AXIS;
-			}
-
-			if ((ApplicationStateInfo.CurrentAccelData.Y_Axis
-					< AccelData.Y_Axis - 1)
-					|| (ApplicationStateInfo.CurrentAccelData.Y_Axis
-							> AccelData.Y_Axis + 1)) {
-				ApplicationStateInfo.CurrentAccelData.Y_Axis = AccelData.Y_Axis;
-
-				MessageID |= APPLICATION_MAILBOX_MESSAGE_ID_Y_AXIS;
-			}
-
-			if ((ApplicationStateInfo.CurrentAccelData.Z_Axis
-					< AccelData.Z_Axis - 1)
-					|| (ApplicationStateInfo.CurrentAccelData.Z_Axis
-							> AccelData.Z_Axis + 1)) {
-				ApplicationStateInfo.CurrentAccelData.Z_Axis = AccelData.Z_Axis;
-
-				MessageID |= APPLICATION_MAILBOX_MESSAGE_ID_Z_AXIS;
-			}
-
-			/* If any access has change then inform the main event handler.*/
-			if (MessageID != APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_CHANGE)
-				PostApplicationMailbox(MessageID);
-		}
-	}
-}
-
-/* The following function is a utility function that is used to      */
-/* process and send accelerometer data to an LE connection.          */
-static void ProcessSendLEAccelData(Byte_t AxisChangeMask) {
-	int Result;
-	Byte_t NotifiedMask;
-	DeviceInfo_t *DeviceInfo;
-
-	/* Only continue if we are current connected to a LE Device.         */
-	if (ApplicationStateInfo.Flags & APPLICATION_STATE_INFO_FLAGS_LE_CONNECTED) {
-		/* Search for the Device Information for this device.             */
-		DeviceInfo = SearchDeviceInfoEntryByBD_ADDR(&DeviceInfoList,
-				ApplicationStateInfo.LEConnectionInfo.BD_ADDR);
-		if (DeviceInfo) {
-			NotifiedMask = 0;
-
-			/* Verified that the selected client has configured the Key    */
-			/* State Characteristic for notifications for each of the axis */
-			/* that changed.                                               */
-
-			if ((AxisChangeMask & APPLICATION_MAILBOX_MESSAGE_ID_X_AXIS)
-					&& (DeviceInfo->ACCServerInformation.XAxis_Client_Configuration)) {
-				Result = ACC_Notify_Axis(ApplicationStateInfo.BluetoothStackID,
-						ApplicationStateInfo.ACCInstanceID,
-						ApplicationStateInfo.LEConnectionInfo.ConnectionIndex,
-						ctXAxis, ApplicationStateInfo.CurrentAccelData.X_Axis);
-				if (!Result)
-					NotifiedMask |= APPLICATION_MAILBOX_MESSAGE_ID_X_AXIS;
-				else
-					Display(
-							("Error - ACC_Notify_Axis ctXAxis %d.\r\n", Result));
-			}
-
-			if ((AxisChangeMask & APPLICATION_MAILBOX_MESSAGE_ID_Y_AXIS)
-					&& (DeviceInfo->ACCServerInformation.YAxis_Client_Configuration)) {
-				Result = ACC_Notify_Axis(ApplicationStateInfo.BluetoothStackID,
-						ApplicationStateInfo.ACCInstanceID,
-						ApplicationStateInfo.LEConnectionInfo.ConnectionIndex,
-						ctYAxis, ApplicationStateInfo.CurrentAccelData.Y_Axis);
-				if (!Result)
-					NotifiedMask |= APPLICATION_MAILBOX_MESSAGE_ID_Y_AXIS;
-				else
-					Display(
-							("Error - ACC_Notify_Axis ctYAxis %d.\r\n", Result));
-			}
-
-			if ((AxisChangeMask & APPLICATION_MAILBOX_MESSAGE_ID_Z_AXIS)
-					&& (DeviceInfo->ACCServerInformation.ZAxis_Client_Configuration)) {
-				Result = ACC_Notify_Axis(ApplicationStateInfo.BluetoothStackID,
-						ApplicationStateInfo.ACCInstanceID,
-						ApplicationStateInfo.LEConnectionInfo.ConnectionIndex,
-						ctZAxis, ApplicationStateInfo.CurrentAccelData.Z_Axis);
-				if (!Result)
-					NotifiedMask |= APPLICATION_MAILBOX_MESSAGE_ID_Z_AXIS;
-				else
-					Display(
-							("Error - ACC_Notify_Axis ctZAxis %d.\r\n", Result));
-			}
-
-			DisplayAccelChange("Accelerometer Changed", AxisChangeMask);
-			DisplayAccelChange("Accelerometer Notified", NotifiedMask);
-		} else
-			Display(("No device information found for device.\r\n"));
 	}
 }
 
@@ -1584,15 +1405,6 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 								GAP_LE_Event_Data->Event_Data.GAP_LE_Connection_Complete_Event_Data->Peer_Address))
 							Display(
 									("Failed to add device to Device Info List.\r\n"));
-					} else {
-						/* Check to see if this device enabled the         */
-						/* Accelerometer.  If so post to the application to*/
-						/* increment the reference count for the           */
-						/* accelerometer and potentially enable the        */
-						/* hardware (if not already enabled).              */
-						if (DeviceInfo->ACCServerInformation.AccelerometerEnabled)
-							PostApplicationMailbox(
-									APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_ENABLE);
 					}
 				}
 			}
@@ -1618,14 +1430,6 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 						SearchDeviceInfoEntryByBD_ADDR(&DeviceInfoList,
 								GAP_LE_Event_Data->Event_Data.GAP_LE_Disconnection_Complete_Event_Data->Peer_Address))
 						!= NULL) {
-					/* Check to see if this device enabled the            */
-					/* Accelerometer.  If so post to the application to   */
-					/* decrement the reference count for the accelerometer*/
-					/* and potentially disable the hardware.              */
-					if (DeviceInfo->ACCServerInformation.AccelerometerEnabled)
-						PostApplicationMailbox(
-								APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_DISABLE);
-
 					/* Check to see if the link is encrypted.  If it isn't*/
 					/* we will delete the device structure.               */
 					Result =
@@ -1893,174 +1697,6 @@ static void BTPSAPI GATT_Connection_Event_Callback(
 		Display(("\r\n"));
 
 		Display(("GATT Connection Callback Data: Event_Data = NULL.\r\n"));
-	}
-}
-
-/* The following declared type represents the Prototype Function for */
-/* a ACC Profile Event Receive Data Callback.  This function will be */
-/* called whenever an ACC Profile Event occurs that is associated    */
-/* with the specified Bluetooth Stack ID.  This function passes to   */
-/* the caller the Bluetooth Stack ID, the ACC Event Data that        */
-/* occurred and the ACC Profile Event Callback Parameter that was    */
-/* specified when this Callback was installed.  The caller is free to*/
-/* use the contents of the ACC Profile Event Data ONLY in the context*/
-/* of this callback.  If the caller requires the Data for a longer   */
-/* period of time, then the callback function MUST copy the data into*/
-/* another Data Buffer This function is guaranteed NOT to be invoked */
-/* more than once simultaneously for the specified installed callback*/
-/* (i.e.  this function DOES NOT have be re-entrant).  It needs to be*/
-/* noted however, that if the same Callback is installed more than   */
-/* once, then the callbacks will be called serially.  Because of     */
-/* this, the processing in this function should be as efficient as   */
-/* possible.  It should also be noted that this function is called in*/
-/* the Thread Context of a Thread that the User does NOT own.        */
-/* Therefore, processing in this function should be as efficient as  */
-/* possible (this argument holds anyway because another ACC Profile  */
-/* Event will not be processed while this function call is           */
-/* outstanding).                                                     */
-/* ** NOTE ** This function MUST NOT Block and wait for events that  */
-/*            can only be satisfied by Receiving ACC Profile Event   */
-/*            Packets.  A Deadlock WILL occur because NO ACC Event   */
-/*            Callbacks will be issued while this function is        */
-/*            currently outstanding.                                 */
-static void BTPSAPI ACC_Event_Callback(unsigned int BluetoothStackID,
-		ACC_Event_Data_t *ACC_Event_Data, unsigned long CallbackParameter) {
-	int Result;
-	DeviceInfo_t *DeviceInfo;
-	Boolean_t NotificationsEnabled;
-
-	/* First, check to see if the required parameters appear to be       */
-	/* semi-valid.                                                       */
-	if ((BluetoothStackID) && (ACC_Event_Data)) {
-		switch (ACC_Event_Data->Event_Data_Type) {
-		case etACC_Server_Read_Client_Configuration_Request:
-			if (ACC_Event_Data->Event_Data.ACC_Read_Client_Configuration_Data) {
-				/* Search the device list for the connection.            */
-				if ((DeviceInfo =
-						SearchDeviceInfoEntryByBD_ADDR(&DeviceInfoList,
-								ACC_Event_Data->Event_Data.ACC_Read_Client_Configuration_Data->RemoteDevice))
-						!= NULL) {
-					switch (ACC_Event_Data->Event_Data.ACC_Read_Client_Configuration_Data->CharacteristicType) {
-					case ctXAxis:
-						NotificationsEnabled =
-								DeviceInfo->ACCServerInformation.XAxis_Client_Configuration;
-						break;
-					case ctYAxis:
-						NotificationsEnabled =
-								DeviceInfo->ACCServerInformation.YAxis_Client_Configuration;
-						break;
-					case ctZAxis:
-						NotificationsEnabled =
-								DeviceInfo->ACCServerInformation.ZAxis_Client_Configuration;
-						break;
-					default:
-						NotificationsEnabled = FALSE;
-						break;
-					}
-				} else
-					NotificationsEnabled = FALSE;
-
-				Result =
-						ACC_Read_Client_Configuration_Response(BluetoothStackID,
-								ACC_Event_Data->Event_Data.ACC_Read_Client_Configuration_Data->InstanceID,
-								ACC_Event_Data->Event_Data.ACC_Read_Client_Configuration_Data->TransactionID,
-								NotificationsEnabled);
-				if (Result)
-					Display(
-							("Error - ACC_Read_Client_Configuration_Response returned %d.\r\n", Result));
-			}
-			break;
-		case etACC_Server_Client_Configuration_Update:
-			if (ACC_Event_Data->Event_Data.ACC_Client_Configuration_Update_Data) {
-				/* Search the device list for the connection.            */
-				if ((DeviceInfo =
-						SearchDeviceInfoEntryByBD_ADDR(&DeviceInfoList,
-								ACC_Event_Data->Event_Data.ACC_Client_Configuration_Update_Data->RemoteDevice))
-						!= NULL) {
-					switch (ACC_Event_Data->Event_Data.ACC_Client_Configuration_Update_Data->CharacteristicType) {
-					case ctXAxis:
-						DeviceInfo->ACCServerInformation.XAxis_Client_Configuration =
-								ACC_Event_Data->Event_Data.ACC_Client_Configuration_Update_Data->NotificationsEnabled;
-						break;
-					case ctYAxis:
-						DeviceInfo->ACCServerInformation.YAxis_Client_Configuration =
-								ACC_Event_Data->Event_Data.ACC_Client_Configuration_Update_Data->NotificationsEnabled;
-						break;
-					case ctZAxis:
-						DeviceInfo->ACCServerInformation.ZAxis_Client_Configuration =
-								ACC_Event_Data->Event_Data.ACC_Client_Configuration_Update_Data->NotificationsEnabled;
-						break;
-					default:
-						/* Do nothing.                                  */
-						break;
-					}
-				}
-			}
-			break;
-		case etACC_Server_Accelerometer_Enable_Read_Request:
-			if (ACC_Event_Data->Event_Data.ACC_Accelerometer_Enable_Read_Request_Data) {
-				/* Search the device list for the connection.            */
-				if ((DeviceInfo =
-						SearchDeviceInfoEntryByBD_ADDR(&DeviceInfoList,
-								ACC_Event_Data->Event_Data.ACC_Accelerometer_Enable_Read_Request_Data->RemoteDevice))
-						!= NULL)
-					NotificationsEnabled =
-							DeviceInfo->ACCServerInformation.AccelerometerEnabled;
-				else
-					NotificationsEnabled = FALSE;
-
-				Result =
-						ACCEL_Enable_Read_Request_Response(BluetoothStackID,
-								ACC_Event_Data->Event_Data.ACC_Accelerometer_Enable_Read_Request_Data->InstanceID,
-								ACC_Event_Data->Event_Data.ACC_Accelerometer_Enable_Read_Request_Data->TransactionID,
-								NotificationsEnabled);
-				if (Result)
-					Display(
-							("Error - ACCEL_Enable_Read_Request_Response returned %d.\r\n", Result));
-			}
-			break;
-		case etACC_Server_Accelerometer_Enable_Update_Request:
-			if (ACC_Event_Data->Event_Data.ACC_Accelerometer_Enable_Update_Request_Data) {
-				/* Search the device list for the connection.            */
-				if ((DeviceInfo =
-						SearchDeviceInfoEntryByBD_ADDR(&DeviceInfoList,
-								ACC_Event_Data->Event_Data.ACC_Accelerometer_Enable_Update_Request_Data->RemoteDevice))
-						!= NULL) {
-					DeviceInfo->ACCServerInformation.AccelerometerEnabled =
-							ACC_Event_Data->Event_Data.ACC_Accelerometer_Enable_Update_Request_Data->EnableAccelerometer;
-				}
-
-				Result =
-						ACCEL_Enable_Update_Request_Response(BluetoothStackID,
-								ACC_Event_Data->Event_Data.ACC_Accelerometer_Enable_Read_Request_Data->InstanceID,
-								ACC_Event_Data->Event_Data.ACC_Accelerometer_Enable_Read_Request_Data->TransactionID,
-								0);
-				if (!Result) {
-					/* Either enable or disable the accelerometer.        */
-					if (ACC_Event_Data->Event_Data.ACC_Accelerometer_Enable_Update_Request_Data->EnableAccelerometer) {
-						/* Inform the event handler that the accelerometer */
-						/* needs to be enabled if it has not been enabled  */
-						/* already.                                        */
-						PostApplicationMailbox(
-								APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_ENABLE);
-					} else {
-						/* Inform the event handler that the accelerometer */
-						/* needs to be disabled if not being used for a    */
-						/* BR/EDR Connection.                              */
-						PostApplicationMailbox(
-								APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_DISABLE);
-					}
-				} else
-					Display(
-							("Error - ACCEL_Enable_Read_Request_Response returned %d.\r\n", Result));
-			}
-			break;
-		}
-	} else {
-		/* There was an error with one or more of the input parameters.   */
-		Display(("\r\n"));
-
-		Display(("ACC Event Callback Data: Event_Data = NULL.\r\n"));
 	}
 }
 
@@ -2572,9 +2208,6 @@ void ApplicationMain(void) {
 			/* Process the scheduler.                                      */
 			BTPS_ProcessScheduler();
 
-			/* Process the accelerometer if necessary.                     */
-			ProcessReadAccelData();
-
 			/* Wait on the application mailbox.                            */
 			if (BTPS_WaitMailbox(ApplicationStateInfo.Mailbox, &MessageID)) {
 				switch (MessageID) {
@@ -2583,43 +2216,10 @@ void ApplicationMain(void) {
 					/* of the queued data.                                */
 					ProcessSendSPPData(FALSE);
 					break;
-				case APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_ENABLE:
-					/* Check to see if the accelerometer is already       */
-					/* enabled.                                           */
-					if (++(ApplicationStateInfo.AccelEnableCount) == 1) {
-						/* Accelerometer is not enabled so enable it and   */
-						/* flag that it is enabled.                        */
-						Acceleterometer_Enable(HAL_GetSystemSpeed());
-					}
-					break;
-				case APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_DISABLE:
-					/* Check to see if the accelerometer is already       */
-					/* disabled.                                          */
-					if (ApplicationStateInfo.AccelEnableCount) {
-						/* If we have no enables requests for the          */
-						/* Accelerometer outstanding we can disable it in  */
-						/* hardware.                                       */
-						if (--(ApplicationStateInfo.AccelEnableCount) == 0) {
-							/* Accelerometer is not enabled so enable it and*/
-							/* flag that it is enabled.                     */
-							Accelerometer_Shutdown();
-						}
-					}
-					break;
 				case APPLICATION_MAILBOX_MESSAGE_ID_LE_CONNECTED:
 					/* Set the LE Connection Flag.                        */
 					ApplicationStateInfo.Flags |=
 							APPLICATION_STATE_INFO_FLAGS_LE_CONNECTED;
-
-					/* Go ahead and send the current accelerometer data   */
-					/* and key state data if necessary.                   */
-					PostApplicationMailbox(
-							APPLICATION_MAILBOX_MESSAGE_ID_KEY_STATE_CHANGE);
-					PostApplicationMailbox(
-							APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_CHANGE
-									| APPLICATION_MAILBOX_MESSAGE_ID_X_AXIS
-									| APPLICATION_MAILBOX_MESSAGE_ID_Y_AXIS
-									| APPLICATION_MAILBOX_MESSAGE_ID_Z_AXIS);
 
 					/* Set the LE LED.                                    */
 					HAL_SetLED(1, 1);
@@ -2655,21 +2255,15 @@ void ApplicationMain(void) {
 							ApplicationStateInfo.BluetoothStackID,
 							cmNonConnectableMode);
 
-					/* Enable the accelerometer.                          */
-					PostApplicationMailbox(
-							APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_ENABLE);
-
-					/* Go ahead and send the current accelerometer data   */
-					/* and key state data if necessary.                   */
-					PostApplicationMailbox(
-							APPLICATION_MAILBOX_MESSAGE_ID_KEY_STATE_CHANGE);
-
 					/* Set the BR/EDR Connection Flag.                    */
 					ApplicationStateInfo.Flags |=
 							APPLICATION_STATE_INFO_FLAGS_CB_CONNECTED;
 
 					/* Set the BR/EDR LED.                                */
 					HAL_SetLED(0, 1);
+
+					/* "Hello" once FIXME */
+					ProcessSendSPPData(TRUE);
 					break;
 				case APPLICATION_MAILBOX_MESSAGE_ID_CB_DISCONNECTED:
 					/* Format the advertising data to say that BR/EDR is  */
@@ -2697,10 +2291,6 @@ void ApplicationMain(void) {
 							~(APPLICATION_STATE_INFO_FLAGS_CB_CONNECTED
 									| APPLICATION_STATE_INFO_FLAGS_SPP_BUFFER_FULL);
 
-					/* Potentially disable the Accelerometer.             */
-					PostApplicationMailbox(
-							APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_DISABLE);
-
 					/* Since we are disconnected we will discard any SPP  */
 					/* data that was queued for transmission to the       */
 					/* device.                                            */
@@ -2708,27 +2298,6 @@ void ApplicationMain(void) {
 
 					/* Clear the BR/EDR LED.                              */
 					HAL_SetLED(0, 0);
-					break;
-				default:
-					/* Attempt to process the Accelerometer Change        */
-					/* Message.                                           */
-					if ((MessageID
-							& (~APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_MASK))
-							== APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_CHANGE) {
-						/* Process the Accelerometer update and send all of*/
-						/* the current information to any connection SPP   */
-						/* device.                                         */
-						ProcessSendSPPData(TRUE);
-
-						/* Mask out the Message ID so that we only process */
-						/* the Axis that has changed.                      */
-						MessageID &= APPLICATION_MAILBOX_MESSAGE_ID_ACCEL_MASK;
-
-						/* Process the Accelerometer change for any active */
-						/* LE Connection.  We will only notify the axis    */
-						/* that has changed.                               */
-						ProcessSendLEAccelData(MessageID);
-					}
 					break;
 				}
 			} else {
