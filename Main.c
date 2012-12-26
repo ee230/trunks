@@ -15,7 +15,6 @@
 #include "HAL.h"                 /* Function for Hardware Abstraction.        */
 #include "Main.h"                /* Main application header.                  */
 #include "EHCILL.h"              /* eHCILL Implementation Header.             */
-#include "Buttons.h"             /* Button Module.                            */
 #include "Accelerometer.h"       /* Accelerometer Definitions.                */
 #include "HRDWCFG.h"
 
