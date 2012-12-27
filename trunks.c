@@ -1,21 +1,15 @@
-/*****< KeyFobDemo.c >*********************************************************/
+/*****< trunks.c >*************************************************************/
+/*                                                                            */
+/*  Based on KeyFobDemo                                                       */
+/*                                                                            */
 /*      Copyright 2001 - 2012 Stonestreet One.                                */
 /*      All Rights Reserved.                                                  */
 /*                                                                            */
-/*  KeyFobDemo - Embedded Bluetooth Key Fob (TI) Sample Application (SPP +    */
-/*               GATT).                                                       */
+/*  Author:  Tim Cook, Clément Guérin                                         */
 /*                                                                            */
-/*  Author:  Tim Cook                                                         */
-/*                                                                            */
-/*** MODIFICATION HISTORY *****************************************************/
-/*                                                                            */
-/*   mm/dd/yy  F. Lastname    Description of Modification                     */
-/*   --------  -----------    ------------------------------------------------*/
-/*   08/25/12  T. Cook        Initial creation.                               */
-/*   11/15/12  Z. Haq         Minor Mods for SPP data format and Device Name  */
 /******************************************************************************/
 #include <stdio.h>               /* Included for sscanf.                      */
-#include <stdlib.h>                    /*included for itoa() call             */
+#include <stdlib.h>              /* Included for itoa() call                  */
 #include "Main.h"                /* Application Interface Abstraction.        */
 #include "EHCILL.h"              /* HCILL Implementation Header.              */
 #include "HAL.h"                 /* Function for Hardware Abstraction.        */
@@ -68,8 +62,8 @@
 /* Buffer Size.      */
 
 /* Determine the Name we will use for this compilation.              */
-#define LE_DEMO_DEVICE_NAME                        "Keyfob"
-#define CB_DEMO_DEVICE_NAME                        "Keyfob"
+#define LE_DEMO_DEVICE_NAME                        "Trunks"
+#define CB_DEMO_DEVICE_NAME                        "Trunks"
 
 /* The following is used as a printf replacement.                    */
 #define Display(_x)                                do { BTPS_OutputMessage _x; } while(0)
@@ -1278,7 +1272,7 @@ static unsigned int FormatSPPDataPacket(unsigned int PacketBufferLength,
 		Byte_t *PacketBuffer) {
 	static int i = 0;
 
-	BTPS_SprintF((char *) PacketBuffer, "hello #%i\n", i++);
+	BTPS_SprintF((char *) PacketBuffer, "hello #%d\n", ++i);
 
 	return BTPS_StringLength((char *) PacketBuffer);
 }
