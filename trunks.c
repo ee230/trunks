@@ -123,6 +123,7 @@ typedef struct _tagApplicationStateInfo_t {
 #define APPLICATION_MAILBOX_MESSAGE_ID_CB_DISCONNECTED   0x03
 #define APPLICATION_MAILBOX_MESSAGE_ID_CB_CONNECTED      0x04
 #define APPLICATION_MAILBOX_MESSAGE_ID_SPP_BUFFER_EMPTY  0x05
+#define APPLICATION_MAILBOX_MESSAGE_ID_UART_READ         0x06
 
 /* The following structure for a Master is used to hold a list of    */
 /* information on all paired devices. For slave we will not use this */
@@ -1270,11 +1271,7 @@ static void IdleFunction(unsigned int BluetoothStackID) {
 /* bytes formatted into PacketBuffer.                                */
 static unsigned int FormatSPPDataPacket(unsigned int PacketBufferLength,
 		Byte_t *PacketBuffer) {
-	static int i = 0;
-
-	BTPS_SprintF((char *) PacketBuffer, "hello #%d\n", ++i);
-
-	return BTPS_StringLength((char *) PacketBuffer);
+	return HAL_ConsoleRead(PacketBufferLength, (char *)PacketBuffer);
 }
 
 /* The following function is a utility function which is used to     */
@@ -1305,7 +1302,6 @@ static void ProcessSendSPPData(Boolean_t PacketizeCurrentData) {
 				ApplicationStateInfo.SPPServerPortID,
 				ApplicationStateInfo.SPPBufferLength,
 				(unsigned char *) ApplicationStateInfo.SPPBuffer);
-		//Result = SPP_Data_Write(ApplicationStateInfo.BluetoothStackID, ApplicationStateInfo.SPPServerPortID, 6, "hello!");
 
 		if (Result > 0) {
 			/* If we wrote less than the requested number of bytes move the*/
@@ -2190,10 +2186,17 @@ int InitializeApplication(HCI_DriverInformation_t *HCI_DriverInformation,
 	return (ret_val);
 }
 
+void ReadFromUART(void* param) {
+	PostApplicationMailbox(APPLICATION_MAILBOX_MESSAGE_ID_UART_READ);
+}
+
 /* The following function is the main application state machine which*/
 /* is used to process all application events.                        */
 void ApplicationMain(void) {
 	Byte_t MessageID;
+
+	/* Read from UART every second                                     */
+	BTPS_AddFunctionToScheduler(ReadFromUART, NULL, 1000);
 
 	/* Verify that the application mailbox has been created.             */
 	if (ApplicationStateInfo.Mailbox) {
@@ -2255,9 +2258,6 @@ void ApplicationMain(void) {
 
 					/* Set the BR/EDR LED.                                */
 					HAL_SetLED(0, 1);
-
-					/* "Hello" once FIXME */
-					ProcessSendSPPData(TRUE);
 					break;
 				case APPLICATION_MAILBOX_MESSAGE_ID_CB_DISCONNECTED:
 					/* Format the advertising data to say that BR/EDR is  */
@@ -2292,6 +2292,9 @@ void ApplicationMain(void) {
 
 					/* Clear the BR/EDR LED.                              */
 					HAL_SetLED(0, 0);
+					break;
+				case APPLICATION_MAILBOX_MESSAGE_ID_UART_READ:
+					ProcessSendSPPData(TRUE);
 					break;
 				}
 			} else {
