@@ -44,7 +44,7 @@ typedef enum
 
    /* Maximum numbered of buffered characters on the DEBUG UART         */
    /* receiver.                                                         */
-#define BT_DEBUG_UART_RX_BUFFER_SIZE   64
+#define BT_DEBUG_UART_RX_BUFFER_SIZE   512
 
    /* Maximum numbered of buffered characters on the DEBUG UART         */
    /* transmitter.                                                      */

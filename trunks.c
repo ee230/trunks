@@ -2186,7 +2186,7 @@ int InitializeApplication(HCI_DriverInformation_t *HCI_DriverInformation,
 	return (ret_val);
 }
 
-void ReadFromUART(void* param) {
+void EOL_callback(void* param) {
 	PostApplicationMailbox(APPLICATION_MAILBOX_MESSAGE_ID_UART_READ);
 }
 
@@ -2194,9 +2194,6 @@ void ReadFromUART(void* param) {
 /* is used to process all application events.                        */
 void ApplicationMain(void) {
 	Byte_t MessageID;
-
-	/* Read from UART every second                                     */
-	BTPS_AddFunctionToScheduler(ReadFromUART, NULL, 1000);
 
 	/* Verify that the application mailbox has been created.             */
 	if (ApplicationStateInfo.Mailbox) {
