@@ -1076,7 +1076,7 @@ __interrupt void DEBUG_UART_INTERRUPT(void)
 
 #endif
 
-   if (ch == '\n')
+   if (ch == 0xFF)
    {
 	   EOL_callback(NULL);
    }
