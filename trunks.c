@@ -8,6 +8,7 @@
 /*  Author:  Tim Cook, Clément Guérin                                         */
 /*                                                                            */
 /******************************************************************************/
+
 #include <stdio.h>               /* Included for sscanf.                      */
 #include <stdlib.h>              /* Included for itoa() call                  */
 #include "Main.h"                /* Application Interface Abstraction.        */
@@ -215,19 +216,19 @@ static BTPSCONST char *IOCapabilitiesStrings[] =
 
 /* Internal function prototypes.                                     */
 static Boolean_t CreateNewDeviceInfoEntry(DeviceInfo_t **ListHead,
-		GAP_LE_Address_Type_t ConnectionAddressType,
-		BD_ADDR_t ConnectionBD_ADDR);
+		GAP_LE_Address_Type_t *ConnectionAddressType,
+		BD_ADDR_t *ConnectionBD_ADDR);
 static DeviceInfo_t *SearchDeviceInfoEntryByBD_ADDR(DeviceInfo_t **ListHead,
-		BD_ADDR_t BD_ADDR);
+		BD_ADDR_t *BD_ADDR);
 static DeviceInfo_t *DeleteDeviceInfoEntry(DeviceInfo_t **ListHead,
-		BD_ADDR_t BD_ADDR);
+		BD_ADDR_t *BD_ADDR);
 static void FreeDeviceInfoEntryMemory(DeviceInfo_t *EntryToFree);
 static void FreeDeviceInfoList(DeviceInfo_t **ListHead);
 
-static void BD_ADDRToStr(BD_ADDR_t Board_Address, BoardStr_t BoardStr);
+static void BD_ADDRToStr(BD_ADDR_t *Board_Address, BoardStr_t BoardStr);
 
 static void DisplayPairingInformation(
-		GAP_LE_Pairing_Capabilities_t Pairing_Capabilities);
+		GAP_LE_Pairing_Capabilities_t *Pairing_Capabilities);
 static void DisplayFunctionError(char *Function, int Status);
 static void DisplayFunctionSuccess(char *Function);
 
@@ -243,11 +244,11 @@ static void PostApplicationMailbox(Byte_t MessageID);
 
 static void ConfigureCapabilities(GAP_LE_Pairing_Capabilities_t *Capabilities);
 static int SlavePairingRequestResponse(unsigned int BluetoothStackID,
-		BD_ADDR_t BD_ADDR);
+		BD_ADDR_t *BD_ADDR);
 static int EncryptionInformationRequestResponse(unsigned int BluetoothStackID,
-		BD_ADDR_t BD_ADDR, Byte_t KeySize,
+		BD_ADDR_t *BD_ADDR, Byte_t KeySize,
 		GAP_LE_Authentication_Response_Information_t *GAP_LE_Authentication_Response_Information);
-static int DeleteLinkKey(unsigned int BluetoothStackID, BD_ADDR_t BD_ADDR);
+static int DeleteLinkKey(unsigned int BluetoothStackID, BD_ADDR_t *BD_ADDR);
 
 static void FormatEIRData(unsigned int BluetoothStackID);
 static void FormatAdvertisingData(unsigned int BluetoothStackID,
@@ -284,19 +285,19 @@ static void BTPSAPI SPP_Event_Callback(unsigned int BluetoothStackID,
 /*            Connection BD_ADDR.  When this occurs, this function   */
 /*            returns NULL.                                          */
 static Boolean_t CreateNewDeviceInfoEntry(DeviceInfo_t **ListHead,
-		GAP_LE_Address_Type_t ConnectionAddressType,
-		BD_ADDR_t ConnectionBD_ADDR) {
+		GAP_LE_Address_Type_t *ConnectionAddressType,
+		BD_ADDR_t *ConnectionBD_ADDR) {
 	Boolean_t ret_val = FALSE;
 	DeviceInfo_t *DeviceInfoPtr;
 
 	/* Verify that the passed in parameters seem semi-valid.             */
-	if ((ListHead) && (!COMPARE_NULL_BD_ADDR(ConnectionBD_ADDR))) {
+	if ((ListHead) && (!COMPARE_NULL_BD_ADDR(*ConnectionBD_ADDR))) {
 		/* Allocate the memory for the entry.                             */
 		if ((DeviceInfoPtr = BTPS_AllocateMemory(sizeof(DeviceInfo_t))) != NULL) {
 			/* Initialize the entry.                                       */
 			BTPS_MemInitialize(DeviceInfoPtr, 0, sizeof(DeviceInfo_t));
-			DeviceInfoPtr->ConnectionAddressType = ConnectionAddressType;
-			DeviceInfoPtr->ConnectionBD_ADDR = ConnectionBD_ADDR;
+			DeviceInfoPtr->ConnectionAddressType = *ConnectionAddressType;
+			DeviceInfoPtr->ConnectionBD_ADDR = *ConnectionBD_ADDR;
 
 			ret_val = BSC_AddGenericListEntry_Actual(ekBD_ADDR_t,
 					BTPS_STRUCTURE_OFFSET(DeviceInfo_t, ConnectionBD_ADDR),
@@ -318,8 +319,8 @@ static Boolean_t CreateNewDeviceInfoEntry(DeviceInfo_t **ListHead,
 /* either the List Head is invalid, the BD_ADDR is invalid, or the   */
 /* Connection BD_ADDR was NOT found.                                 */
 static DeviceInfo_t *SearchDeviceInfoEntryByBD_ADDR(DeviceInfo_t **ListHead,
-		BD_ADDR_t BD_ADDR) {
-	return (BSC_SearchGenericListEntry(ekBD_ADDR_t, (void *) (&BD_ADDR),
+		BD_ADDR_t *BD_ADDR) {
+	return (BSC_SearchGenericListEntry(ekBD_ADDR_t, (void *) (BD_ADDR),
 			BTPS_STRUCTURE_OFFSET(DeviceInfo_t, ConnectionBD_ADDR),
 			BTPS_STRUCTURE_OFFSET(DeviceInfo_t, NextDeviceInfoInfoPtr),
 			(void **) (ListHead)));
@@ -333,8 +334,8 @@ static DeviceInfo_t *SearchDeviceInfoEntryByBD_ADDR(DeviceInfo_t **ListHead,
 /* the caller is responsible for deleting the memory associated with */
 /* this entry by calling the FreeKeyEntryMemory() function.          */
 static DeviceInfo_t *DeleteDeviceInfoEntry(DeviceInfo_t **ListHead,
-		BD_ADDR_t BD_ADDR) {
-	return (BSC_DeleteGenericListEntry(ekBD_ADDR_t, (void *) (&BD_ADDR),
+		BD_ADDR_t *BD_ADDR) {
+	return (BSC_DeleteGenericListEntry(ekBD_ADDR_t, (void *) (BD_ADDR),
 			BTPS_STRUCTURE_OFFSET(DeviceInfo_t, ConnectionBD_ADDR),
 			BTPS_STRUCTURE_OFFSET(DeviceInfo_t, NextDeviceInfoInfoPtr),
 			(void **) (ListHead)));
@@ -359,19 +360,19 @@ static void FreeDeviceInfoList(DeviceInfo_t **ListHead) {
 /* BD_ADDR to be converted to a string.  The second parameter of this*/
 /* function is a pointer to the string in which the converted BD_ADDR*/
 /* is to be stored.                                                  */
-static void BD_ADDRToStr(BD_ADDR_t Board_Address, BoardStr_t BoardStr) {
+static void BD_ADDRToStr(BD_ADDR_t *Board_Address, BoardStr_t BoardStr) {
 	BTPS_SprintF((char *) BoardStr, "0x%02X%02X%02X%02X%02X%02X",
-			Board_Address.BD_ADDR5, Board_Address.BD_ADDR4,
-			Board_Address.BD_ADDR3, Board_Address.BD_ADDR2,
-			Board_Address.BD_ADDR1, Board_Address.BD_ADDR0);
+			Board_Address->BD_ADDR5, Board_Address->BD_ADDR4,
+			Board_Address->BD_ADDR3, Board_Address->BD_ADDR2,
+			Board_Address->BD_ADDR1, Board_Address->BD_ADDR0);
 }
 
 /* The following function displays the pairing capabalities that is  */
 /* passed into this function.                                        */
 static void DisplayPairingInformation(
-		GAP_LE_Pairing_Capabilities_t Pairing_Capabilities) {
+		GAP_LE_Pairing_Capabilities_t *Pairing_Capabilities) {
 	/* Display the IO Capability.                                        */
-	switch (Pairing_Capabilities.IO_Capability) {
+	switch (Pairing_Capabilities->IO_Capability) {
 	case licDisplayOnly:
 		Display(("   IO Capability:       lcDisplayOnly.\r\n"));
 		break;
@@ -390,27 +391,27 @@ static void DisplayPairingInformation(
 	}
 
 	Display(
-			("   MITM:                %s.\r\n", (Pairing_Capabilities.MITM == TRUE)?"TRUE":"FALSE"));
+			("   MITM:                %s.\r\n", (Pairing_Capabilities->MITM == TRUE)?"TRUE":"FALSE"));
 	Display(
-			("   Bonding Type:        %s.\r\n", (Pairing_Capabilities.Bonding_Type == lbtBonding)?"Bonding":"No Bonding"));
+			("   Bonding Type:        %s.\r\n", (Pairing_Capabilities->Bonding_Type == lbtBonding)?"Bonding":"No Bonding"));
 	Display(
-			("   OOB:                 %s.\r\n", (Pairing_Capabilities.OOB_Present == TRUE)?"OOB":"OOB Not Present"));
+			("   OOB:                 %s.\r\n", (Pairing_Capabilities->OOB_Present == TRUE)?"OOB":"OOB Not Present"));
 	Display(
-			("   Encryption Key Size: %d.\r\n", Pairing_Capabilities.Maximum_Encryption_Key_Size));
+			("   Encryption Key Size: %d.\r\n", Pairing_Capabilities->Maximum_Encryption_Key_Size));
 	Display(("   Sending Keys: \r\n"));
 	Display(
-			("      LTK:              %s.\r\n", ((Pairing_Capabilities.Sending_Keys.Encryption_Key == TRUE)?"YES":"NO")));
+			("      LTK:              %s.\r\n", ((Pairing_Capabilities->Sending_Keys.Encryption_Key == TRUE)?"YES":"NO")));
 	Display(
-			("      IRK:              %s.\r\n", ((Pairing_Capabilities.Sending_Keys.Identification_Key == TRUE)?"YES":"NO")));
+			("      IRK:              %s.\r\n", ((Pairing_Capabilities->Sending_Keys.Identification_Key == TRUE)?"YES":"NO")));
 	Display(
-			("      CSRK:             %s.\r\n", ((Pairing_Capabilities.Sending_Keys.Signing_Key == TRUE)?"YES":"NO")));
+			("      CSRK:             %s.\r\n", ((Pairing_Capabilities->Sending_Keys.Signing_Key == TRUE)?"YES":"NO")));
 	Display(("   Receiving Keys: \r\n"));
 	Display(
-			("      LTK:              %s.\r\n", ((Pairing_Capabilities.Receiving_Keys.Encryption_Key == TRUE)?"YES":"NO")));
+			("      LTK:              %s.\r\n", ((Pairing_Capabilities->Receiving_Keys.Encryption_Key == TRUE)?"YES":"NO")));
 	Display(
-			("      IRK:              %s.\r\n", ((Pairing_Capabilities.Receiving_Keys.Identification_Key == TRUE)?"YES":"NO")));
+			("      IRK:              %s.\r\n", ((Pairing_Capabilities->Receiving_Keys.Identification_Key == TRUE)?"YES":"NO")));
 	Display(
-			("      CSRK:             %s.\r\n", ((Pairing_Capabilities.Receiving_Keys.Signing_Key == TRUE)?"YES":"NO")));
+			("      CSRK:             %s.\r\n", ((Pairing_Capabilities->Receiving_Keys.Signing_Key == TRUE)?"YES":"NO")));
 }
 
 /* Displays a function error message.                                */
@@ -566,7 +567,7 @@ static int OpenStack(HCI_DriverInformation_t *HCI_DriverInformation,
 			/* knows what the Device Address is.                           */
 			if (!GAP_Query_Local_BD_ADDR(ApplicationStateInfo.BluetoothStackID,
 					&BD_ADDR)) {
-				BD_ADDRToStr(BD_ADDR, BluetoothAddress);
+				BD_ADDRToStr(&BD_ADDR, BluetoothAddress);
 
 				Display(("BD_ADDR: %s\r\n", BluetoothAddress));
 			}
@@ -600,7 +601,7 @@ static int OpenStack(HCI_DriverInformation_t *HCI_DriverInformation,
 			/* Delete all Stored Link Keys.                                */
 			ASSIGN_BD_ADDR(BD_ADDR, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
-			DeleteLinkKey(ApplicationStateInfo.BluetoothStackID, BD_ADDR);
+			DeleteLinkKey(ApplicationStateInfo.BluetoothStackID, &BD_ADDR);
 
 			/* Regenerate IRK and DHK from the constant Identity Root Key. */
 			GAP_LE_Diversify_Function(ApplicationStateInfo.BluetoothStackID,
@@ -894,7 +895,7 @@ static void ConfigureCapabilities(GAP_LE_Pairing_Capabilities_t *Capabilities) {
 /* The following function provides a mechanism of sending a Slave    */
 /* Pairing Response to a Master's Pairing Request.                   */
 static int SlavePairingRequestResponse(unsigned int BluetoothStackID,
-		BD_ADDR_t BD_ADDR) {
+		BD_ADDR_t *BD_ADDR) {
 	int ret_val;
 	BoardStr_t BoardStr;
 	GAP_LE_Authentication_Response_Information_t AuthenticationResponseData;
@@ -916,7 +917,7 @@ static int SlavePairingRequestResponse(unsigned int BluetoothStackID,
 				&(AuthenticationResponseData.Authentication_Data.Pairing_Capabilities));
 
 		/* Attempt to pair to the remote device.                          */
-		ret_val = GAP_LE_Authentication_Response(BluetoothStackID, BD_ADDR,
+		ret_val = GAP_LE_Authentication_Response(BluetoothStackID, *BD_ADDR,
 				&AuthenticationResponseData);
 
 		Display( ("GAP_LE_Authentication_Response returned %d.\r\n", ret_val));
@@ -933,7 +934,7 @@ static int SlavePairingRequestResponse(unsigned int BluetoothStackID,
 /* responding to a request for Encryption Information to send to a   */
 /* remote device.                                                    */
 static int EncryptionInformationRequestResponse(unsigned int BluetoothStackID,
-		BD_ADDR_t BD_ADDR, Byte_t KeySize,
+		BD_ADDR_t *BD_ADDR, Byte_t KeySize,
 		GAP_LE_Authentication_Response_Information_t *GAP_LE_Authentication_Response_Information) {
 	int ret_val;
 	Word_t LocalDiv;
@@ -941,7 +942,7 @@ static int EncryptionInformationRequestResponse(unsigned int BluetoothStackID,
 	/* Make sure a Bluetooth Stack is open.                              */
 	if (BluetoothStackID) {
 		/* Make sure the input parameters are semi-valid.                 */
-		if ((!COMPARE_NULL_BD_ADDR(BD_ADDR)) && (GAP_LE_Authentication_Response_Information)){
+		if ((!COMPARE_NULL_BD_ADDR(*BD_ADDR)) && (GAP_LE_Authentication_Response_Information)){
 		Display(("   Calling GAP_LE_Generate_Long_Term_Key.\r\n"));
 
 		/* Generate a new LTK, EDIV and Rand tuple.                    */
@@ -956,7 +957,7 @@ static int EncryptionInformationRequestResponse(unsigned int BluetoothStackID,
 			GAP_LE_Authentication_Response_Information->Authentication_Data_Length = GAP_LE_ENCRYPTION_INFORMATION_DATA_SIZE;
 			GAP_LE_Authentication_Response_Information->Authentication_Data.Encryption_Information.Encryption_Key_Size = KeySize;
 
-			ret_val = GAP_LE_Authentication_Response(BluetoothStackID, BD_ADDR, GAP_LE_Authentication_Response_Information);
+			ret_val = GAP_LE_Authentication_Response(BluetoothStackID, *BD_ADDR, GAP_LE_Authentication_Response_Information);
 			if(!ret_val)
 			{
 				Display(("   GAP_LE_Authentication_Response (larEncryptionInformation) success.\r\n", ret_val));
@@ -992,13 +993,13 @@ else
 /* the specified Link Key from the Local Bluetooth Device.  If a NULL*/
 /* Bluetooth Device Address is specified, then all Link Keys will be */
 /* deleted.                                                          */
-static int DeleteLinkKey(unsigned int BluetoothStackID, BD_ADDR_t BD_ADDR) {
+static int DeleteLinkKey(unsigned int BluetoothStackID, BD_ADDR_t *BD_ADDR) {
 	int Result;
 	Byte_t Status_Result;
 	Word_t Num_Keys_Deleted = 0;
 	BD_ADDR_t NULL_BD_ADDR;
 
-	Result = HCI_Delete_Stored_Link_Key(BluetoothStackID, BD_ADDR, TRUE,
+	Result = HCI_Delete_Stored_Link_Key(BluetoothStackID, *BD_ADDR, TRUE,
 			&Status_Result, &Num_Keys_Deleted);
 
 	/* Any stored link keys for the specified address (or all) have been */
@@ -1008,14 +1009,14 @@ static int DeleteLinkKey(unsigned int BluetoothStackID, BD_ADDR_t BD_ADDR) {
 	/* First check to see all Link Keys were deleted.                    */
 	ASSIGN_BD_ADDR(NULL_BD_ADDR, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
-	if (COMPARE_BD_ADDR(BD_ADDR, NULL_BD_ADDR))
+	if (COMPARE_BD_ADDR(*BD_ADDR, NULL_BD_ADDR))
 		BTPS_MemInitialize(LinkKeyInfo, 0, sizeof(LinkKeyInfo));
 	else {
 		/* Individual Link Key.  Go ahead and see if know about the entry */
 		/* in the list.                                                   */
 		for (Result = 0; (Result < sizeof(LinkKeyInfo) / sizeof(LinkKeyInfo_t));
 				Result++) {
-			if (COMPARE_BD_ADDR(BD_ADDR, LinkKeyInfo[Result].BD_ADDR)) {
+			if (COMPARE_BD_ADDR(*BD_ADDR, LinkKeyInfo[Result].BD_ADDR)) {
 				LinkKeyInfo[Result].BD_ADDR = NULL_BD_ADDR;
 
 				break;
@@ -1371,7 +1372,7 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 
 			if (GAP_LE_Event_Data->Event_Data.GAP_LE_Connection_Complete_Event_Data) {
 				BD_ADDRToStr(
-						GAP_LE_Event_Data->Event_Data.GAP_LE_Connection_Complete_Event_Data->Peer_Address,
+						&GAP_LE_Event_Data->Event_Data.GAP_LE_Connection_Complete_Event_Data->Peer_Address,
 						BoardStr);
 
 				Display(
@@ -1387,12 +1388,12 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 					/* Make sure that no entry already exists.            */
 					if ((DeviceInfo =
 							SearchDeviceInfoEntryByBD_ADDR(&DeviceInfoList,
-									GAP_LE_Event_Data->Event_Data.GAP_LE_Connection_Complete_Event_Data->Peer_Address))
+									&GAP_LE_Event_Data->Event_Data.GAP_LE_Connection_Complete_Event_Data->Peer_Address))
 							== NULL) {
 						/* No entry exists so create one.                  */
 						if (!CreateNewDeviceInfoEntry(&DeviceInfoList,
-								GAP_LE_Event_Data->Event_Data.GAP_LE_Connection_Complete_Event_Data->Peer_Address_Type,
-								GAP_LE_Event_Data->Event_Data.GAP_LE_Connection_Complete_Event_Data->Peer_Address))
+								&GAP_LE_Event_Data->Event_Data.GAP_LE_Connection_Complete_Event_Data->Peer_Address_Type,
+								&GAP_LE_Event_Data->Event_Data.GAP_LE_Connection_Complete_Event_Data->Peer_Address))
 							Display(
 									("Failed to add device to Device Info List.\r\n"));
 					}
@@ -1410,7 +1411,7 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 						("   Reason: 0x%02X.\r\n", GAP_LE_Event_Data->Event_Data.GAP_LE_Disconnection_Complete_Event_Data->Reason));
 
 				BD_ADDRToStr(
-						GAP_LE_Event_Data->Event_Data.GAP_LE_Disconnection_Complete_Event_Data->Peer_Address,
+						&GAP_LE_Event_Data->Event_Data.GAP_LE_Disconnection_Complete_Event_Data->Peer_Address,
 						BoardStr);
 				Display(("   BD_ADDR: %s.\r\n", BoardStr));
 
@@ -1418,7 +1419,7 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 				/* list.                                                 */
 				if ((DeviceInfo =
 						SearchDeviceInfoEntryByBD_ADDR(&DeviceInfoList,
-								GAP_LE_Event_Data->Event_Data.GAP_LE_Disconnection_Complete_Event_Data->Peer_Address))
+								&GAP_LE_Event_Data->Event_Data.GAP_LE_Disconnection_Complete_Event_Data->Peer_Address))
 						!= NULL) {
 					/* Check to see if the link is encrypted.  If it isn't*/
 					/* we will delete the device structure.               */
@@ -1431,7 +1432,7 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 						/* structure.                                      */
 						DeviceInfo =
 								DeleteDeviceInfoEntry(&DeviceInfoList,
-										GAP_LE_Event_Data->Event_Data.GAP_LE_Disconnection_Complete_Event_Data->Peer_Address);
+										&GAP_LE_Event_Data->Event_Data.GAP_LE_Disconnection_Complete_Event_Data->Peer_Address);
 						if (DeviceInfo)
 							FreeDeviceInfoEntryMemory(DeviceInfo);
 					}
@@ -1459,7 +1460,7 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 			if ((Authentication_Event_Data =
 					GAP_LE_Event_Data->Event_Data.GAP_LE_Authentication_Event_Data)
 					!= NULL) {
-				BD_ADDRToStr(Authentication_Event_Data->BD_ADDR, BoardStr);
+				BD_ADDRToStr(&Authentication_Event_Data->BD_ADDR, BoardStr);
 
 				switch (Authentication_Event_Data->GAP_LE_Authentication_Event_Type) {
 				case latLongTermKeyRequest:
@@ -1514,7 +1515,7 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 				case latPairingRequest:
 					Display(("Pairing Request: %s.\r\n",BoardStr));
 					DisplayPairingInformation(
-							Authentication_Event_Data->Authentication_Event_Data.Pairing_Request);
+							&Authentication_Event_Data->Authentication_Event_Data.Pairing_Request);
 
 					/* This is a pairing request. Respond with a       */
 					/* Pairing Response.                               */
@@ -1524,7 +1525,7 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 
 					/* Send the Pairing Response.                      */
 					SlavePairingRequestResponse(BluetoothStackID,
-							Authentication_Event_Data->BD_ADDR);
+							&Authentication_Event_Data->BD_ADDR);
 					break;
 				case latConfirmationRequest:
 					Display(("latConfirmationRequest.\r\n"));
@@ -1585,7 +1586,7 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 						/* Failed to pair so delete the key entry for   */
 						/* this device and disconnect the link.         */
 						if ((DeviceInfo = DeleteDeviceInfoEntry(&DeviceInfoList,
-								Authentication_Event_Data->BD_ADDR)) != NULL)
+								&Authentication_Event_Data->BD_ADDR)) != NULL)
 							FreeDeviceInfoEntryMemory(DeviceInfo);
 
 						/* Disconnect the Link.                         */
@@ -1600,7 +1601,7 @@ static void BTPSAPI GAP_LE_Event_Callback(unsigned int BluetoothStackID,
 					/* Generate new LTK,EDIV and Rand and respond with */
 					/* them.                                           */
 					EncryptionInformationRequestResponse(BluetoothStackID,
-							Authentication_Event_Data->BD_ADDR,
+							&Authentication_Event_Data->BD_ADDR,
 							Authentication_Event_Data->Authentication_Event_Data.Encryption_Request_Information.Encryption_Key_Size,
 							&GAP_LE_Authentication_Response_Information);
 					break;
@@ -1659,7 +1660,7 @@ static void BTPSAPI GATT_Connection_Event_Callback(
 				Display(
 						("\r\netGATT_Connection_Device_Connection with size %u: \r\n", GATT_Connection_Event_Data->Event_Data_Size));
 				BD_ADDRToStr(
-						GATT_Connection_Event_Data->Event_Data.GATT_Device_Connection_Data->RemoteDevice,
+						&GATT_Connection_Event_Data->Event_Data.GATT_Device_Connection_Data->RemoteDevice,
 						BoardStr);
 				Display(
 						("   Connection ID:   %u.\r\n", GATT_Connection_Event_Data->Event_Data.GATT_Device_Connection_Data->ConnectionID));
@@ -1740,7 +1741,7 @@ static void BTPSAPI GAP_Event_Callback(unsigned int BluetoothStackID,
 			switch (GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->GAP_Authentication_Event_Type) {
 			case atLinkKeyRequest:
 				BD_ADDRToStr(
-						GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
+						&GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
 						Callback_BoardStr);
 				Display(("\r\n"));
 				Display(("atLinkKeyRequest: %s\r\n", Callback_BoardStr));
@@ -1784,7 +1785,7 @@ static void BTPSAPI GAP_Event_Callback(unsigned int BluetoothStackID,
 				/* A pin code request event occurred, first display   */
 				/* the BD_ADD of the remote device requesting the pin.*/
 				BD_ADDRToStr(
-						GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
+						&GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
 						Callback_BoardStr);
 				Display(("\r\n"));
 				Display(("atPINCodeRequest: %s\r\n", Callback_BoardStr));
@@ -1831,7 +1832,7 @@ static void BTPSAPI GAP_Event_Callback(unsigned int BluetoothStackID,
 				/* An authentication status event occurred, display   */
 				/* all relevant information.                          */
 				BD_ADDRToStr(
-						GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
+						&GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
 						Callback_BoardStr);
 				Display(("\r\n"));
 				Display(
@@ -1841,14 +1842,14 @@ static void BTPSAPI GAP_Event_Callback(unsigned int BluetoothStackID,
 					/* If we failed to authenticate the device delete  */
 					/* any stored link key.                            */
 					DeleteLinkKey(BluetoothStackID,
-							GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device);
+							&GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device);
 				}
 				break;
 			case atLinkKeyCreation:
 				/* A link key creation event occurred, first display  */
 				/* the remote device that caused this event.          */
 				BD_ADDRToStr(
-						GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
+						&GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
 						Callback_BoardStr);
 				Display(("\r\n"));
 				Display(("atLinkKeyCreation: %s\r\n", Callback_BoardStr));
@@ -1889,7 +1890,7 @@ static void BTPSAPI GAP_Event_Callback(unsigned int BluetoothStackID,
 				break;
 			case atIOCapabilityRequest:
 				BD_ADDRToStr(
-						GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
+						&GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
 						Callback_BoardStr);
 				Display(("\r\n"));
 				Display( ("atIOCapabilityRequest: %s\r\n", Callback_BoardStr));
@@ -1922,7 +1923,7 @@ static void BTPSAPI GAP_Event_Callback(unsigned int BluetoothStackID,
 				break;
 			case atIOCapabilityResponse:
 				BD_ADDRToStr(
-						GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
+						&GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
 						Callback_BoardStr);
 				Display(("\r\n"));
 				Display( ("atIOCapabilityResponse: %s\r\n", Callback_BoardStr));
@@ -1939,7 +1940,7 @@ static void BTPSAPI GAP_Event_Callback(unsigned int BluetoothStackID,
 				break;
 			case atUserConfirmationRequest:
 				BD_ADDRToStr(
-						GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
+						&GAP_Event_Data->Event_Data.GAP_Authentication_Event_Data->Remote_Device,
 						Callback_BoardStr);
 				Display(("\r\n"));
 				Display(
@@ -1979,7 +1980,7 @@ static void BTPSAPI GAP_Event_Callback(unsigned int BluetoothStackID,
 					GAP_Event_Data->Event_Data.GAP_Remote_Name_Event_Data;
 			if (GAP_Remote_Name_Event_Data) {
 				/* Inform the user of the Result.                        */
-				BD_ADDRToStr(GAP_Remote_Name_Event_Data->Remote_Device,
+				BD_ADDRToStr(&GAP_Remote_Name_Event_Data->Remote_Device,
 						Callback_BoardStr);
 
 				Display(("\r\n"));
@@ -1994,7 +1995,7 @@ static void BTPSAPI GAP_Event_Callback(unsigned int BluetoothStackID,
 			break;
 		case etEncryption_Change_Result:
 			BD_ADDRToStr(
-					GAP_Event_Data->Event_Data.GAP_Encryption_Mode_Event_Data->Remote_Device,
+					&GAP_Event_Data->Event_Data.GAP_Encryption_Mode_Event_Data->Remote_Device,
 					Callback_BoardStr);
 			Display(
 					("\r\netEncryption_Change_Result for %s, Status: 0x%02X, Mode: %s.\r\n", Callback_BoardStr, GAP_Event_Data->Event_Data.GAP_Encryption_Mode_Event_Data->Encryption_Change_Status, ((GAP_Event_Data->Event_Data.GAP_Encryption_Mode_Event_Data->Encryption_Mode == emDisabled)?"Disabled": "Enabled")));
@@ -2053,7 +2054,7 @@ static void BTPSAPI SPP_Event_Callback(unsigned int BluetoothStackID,
 		case etPort_Open_Indication:
 			/* A remote port is requesting a connection.                */
 			BD_ADDRToStr(
-					SPP_Event_Data->Event_Data.SPP_Open_Port_Indication_Data->BD_ADDR,
+					&SPP_Event_Data->Event_Data.SPP_Open_Port_Indication_Data->BD_ADDR,
 					Callback_BoardStr);
 
 			Display(("\r\n"));
