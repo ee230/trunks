@@ -1,17 +1,14 @@
-/*****< main.c >***************************************************************/
+/*****< main.h >***************************************************************/
+/*                                                                            */
+/*  Based on KeyFobDemo                                                       */
+/*                                                                            */
 /*      Copyright 2001 - 2012 Stonestreet One.                                */
 /*      All Rights Reserved.                                                  */
 /*                                                                            */
-/*  MAIN - Stonestreet One main sample application header.                    */
+/*  Author:  Tim Cook, Clément Guérin                                         */
 /*                                                                            */
-/*  Author:  Tim Cook                                                         */
-/*                                                                            */
-/*** MODIFICATION HISTORY *****************************************************/
-/*                                                                            */
-/*   mm/dd/yy  F. Lastname    Description of Modification                     */
-/*   --------  -----------    ------------------------------------------------*/
-/*   10/28/11  T. Cook        Initial creation.                               */
 /******************************************************************************/
+
 #ifndef __MAIN_H__
 #define __MAIN_H__
 
@@ -38,6 +35,10 @@ int InitializeApplication(HCI_DriverInformation_t *HCI_DriverInformation, BTPS_I
    /* The following function is the main application state machine which*/
    /* is used to process all application events.                        */
 void ApplicationMain(void);
+
+   /* The following function is used to notify the application that data*/
+   /* must be sent.                                                     */
+void DataSendCallback(void *param);
 
 #endif
 

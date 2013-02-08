@@ -2186,7 +2186,7 @@ int InitializeApplication(HCI_DriverInformation_t *HCI_DriverInformation,
 	return (ret_val);
 }
 
-void EOL_callback(void* param) {
+void DataSendCallback(void* param) {
 	PostApplicationMailbox(APPLICATION_MAILBOX_MESSAGE_ID_UART_READ);
 }
 

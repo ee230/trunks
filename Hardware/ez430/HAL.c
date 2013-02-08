@@ -18,7 +18,7 @@
 #include "HRDWCFG.h"             /* SS1 MSP430 Hardware Configuration Header.*/
 #include "EHCILL.h"              /* SS1 EHCILL Prototypes/Constants.         */
 #include "BTPSKRNL.h"
-#include "trunks.h"
+#include "Main.h"
 
 #define BTPS_MSP430_DEFAULT_BAUD           115200L  /* Default UART Baud Rate*/
                                                     /* used in baud rate     */
@@ -1078,7 +1078,7 @@ __interrupt void DEBUG_UART_INTERRUPT(void)
 
    if (ch == 0xFF)
    {
-	   EOL_callback(NULL);
+	   DataSendCallback(NULL);
    }
 }
 
