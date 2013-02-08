@@ -174,6 +174,9 @@ static void ConfigureBoardDefaults(void)
    PEOUT  = 0;  
    PEDIR  = 0xFFFF;                         
    PESEL  = 0;  
+   PFOUT  = 0;
+   PFDIR  = 0xFFFF;
+   PFSEL  = 0;
    P11OUT = 0;
    P11DIR = 0xFF;
    PJOUT  = 0;    
